@@ -18,7 +18,6 @@
 *   **Networking**: [Retrofit](https://square.github.io/retrofit/) & [Moshi](https://github.com/square/moshi)
 *   **Image Loading**: [Coil](https://coil-kt.github.io/coil/)
 *   **Navigation**: [Navigation Compose](https://developer.android.com/jetpack/compose/navigation)
-*   **Data Persistence**: [DataStore](https://developer.android.com/topic/libraries/architecture/datastore)
 *   **Video Playback**: [Android YouTube Player](https://github.com/PierfrancescoSoffritti/android-youtube-player)
 *   **Architecture**: MVVM (Model-View-ViewModel)
 
