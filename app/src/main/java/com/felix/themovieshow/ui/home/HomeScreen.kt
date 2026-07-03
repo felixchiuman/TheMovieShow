@@ -23,7 +23,6 @@ import com.felix.themovieshow.ui.component.LoadingView
 import com.felix.themovieshow.ui.component.MovieRowSection
 import com.felix.themovieshow.ui.component.TopHeaderGreeting
 import androidx.compose.ui.tooling.preview.Preview
-import com.felix.themovieshow.R
 import com.felix.themovieshow.data.api.model.Genre
 import com.felix.themovieshow.ui.theme.TheMovieShowTheme
 import com.felix.themovieshow.ui.theme.BackgroundDark
@@ -41,6 +40,7 @@ fun HomeScreen(
         userName = userName,
         uiState = uiState,
         onMovieClick = onMovieClick,
+        onSeeAllClick = onSeeAllClick,
         onGenreSelected = viewModel::onGenreSelected,
         onLoadMoreMovies = viewModel::loadMoreMovies,
         onRetryLoadGenres = viewModel::loadGenres
@@ -52,10 +52,13 @@ fun HomeScreenContent(
     userName: String,
     uiState: HomeUiState,
     onMovieClick: (Movie) -> Unit,
+    onSeeAllClick: (Int, String) -> Unit,
     onGenreSelected: (Genre) -> Unit,
     onLoadMoreMovies: () -> Unit,
     onRetryLoadGenres: () -> Unit
 ) {
+    val selectedGenreName = uiState.genres.firstOrNull { it.id == uiState.selectedGenreId }?.name ?: "Movies"
+
     Scaffold(containerColor = BackgroundDark) { padding ->
         Column(
             modifier = Modifier
@@ -88,12 +91,18 @@ fun HomeScreenContent(
                                 title = "Continue Watching",
                                 movies = uiState.movies,
                                 onMovieClick = onMovieClick,
-                                onLoadMore = onLoadMoreMovies
+                                onLoadMore = onLoadMoreMovies,
+                                onViewAllClick = {
+                                    uiState.selectedGenreId?.let { onSeeAllClick(it, selectedGenreName) }
+                                }
                             )
                             MovieRowSection(
                                 title = "Top Trending",
                                 movies = uiState.movies.take(10),
-                                onMovieClick = onMovieClick
+                                onMovieClick = onMovieClick,
+                                onViewAllClick = {
+                                    uiState.selectedGenreId?.let { onSeeAllClick(it, selectedGenreName) }
+                                }
                             )
                         }
                     }
@@ -145,6 +154,7 @@ fun HomeScreenPreview() {
                 )
             ),
             onMovieClick = {},
+            onSeeAllClick = { _, _ -> },
             onGenreSelected = {},
             onLoadMoreMovies = {},
             onRetryLoadGenres = {}
