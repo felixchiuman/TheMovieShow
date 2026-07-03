@@ -1,6 +1,5 @@
 package com.felix.themovieshow.ui.component
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,7 +35,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.felix.themovieshow.data.api.model.Genre
 import com.felix.themovieshow.data.api.model.Movie
 import com.felix.themovieshow.ui.theme.AccentRed
 import com.felix.themovieshow.ui.theme.TextSecondary
@@ -67,61 +64,6 @@ fun TopHeaderGreeting(
                     tint = AccentRed
                 )
             }
-        }
-    }
-}
-
-/**
- * Row chip genre yang reusable
- */
-@Composable
-fun GenreChipRow(
-    genres: List<Genre>,
-    selectedGenreId: Int?,
-    onGenreSelected: (Genre) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp)
-    ) {
-        items(genres, key = { it.id }) { genre ->
-            GenreChip(
-                genre = genre,
-                isSelected = genre.id == selectedGenreId,
-                onClick = { onGenreSelected(genre) }
-            )
-        }
-    }
-}
-
-@Composable
-fun GenreChip(
-    genre: Genre,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.clickable { onClick() },
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = genre.name,
-            color = if (isSelected) Color.White else TextSecondary,
-            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-            fontSize = 15.sp
-        )
-        if (isSelected) {
-            Spacer(Modifier.height(4.dp))
-            Box(
-                Modifier
-                    .width(20.dp)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(AccentRed)
-            )
         }
     }
 }
@@ -256,13 +198,6 @@ fun EmptyView(message: String = "Tidak ada data", modifier: Modifier = Modifier)
     }
 }
 
-private val previewGenres = listOf(
-    Genre(id = 1, name = "All"),
-    Genre(id = 2, name = "Movies"),
-    Genre(id = 3, name = "Drama"),
-    Genre(id = 4, name = "TV Show")
-)
-
 private val previewMovie = Movie(
     id = 1,
     title = "Mortal Kombat II",
@@ -287,28 +222,6 @@ private val previewMovies = listOf(
 @Composable
 private fun TopHeaderGreetingPreview() {
     TopHeaderGreeting(userName = "Felix")
-}
-
-@Preview(showBackground = true, name = "Genre Chip Row")
-@Composable
-private fun GenreChipRowPreview() {
-    GenreChipRow(
-        genres = previewGenres,
-        selectedGenreId = 1,
-        onGenreSelected = {}
-    )
-}
-
-@Preview(showBackground = true, name = "Genre Chip - Selected")
-@Composable
-private fun GenreChipSelectedPreview() {
-    GenreChip(genre = Genre(id = 1, name = "All"), isSelected = true, onClick = {})
-}
-
-@Preview(showBackground = true, name = "Genre Chip - Unselected")
-@Composable
-private fun GenreChipUnselectedPreview() {
-    GenreChip(genre = Genre(id = 2, name = "Movies"), isSelected = false, onClick = {})
 }
 
 @Preview(showBackground = true, name = "Movie Poster Card")

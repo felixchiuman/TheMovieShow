@@ -31,7 +31,6 @@ class FavoriteViewModel @Inject constructor(
                 initialValue = FavoriteUiState(isLoading = true)
             )
 
-    /** Hapus dari favorit langsung dari list (swipe/tap ikon). DB = single source of truth. */
     fun removeFavorite(movieId: Int) {
         viewModelScope.launch {
             favoriteRepository.removeFavorite(movieId)

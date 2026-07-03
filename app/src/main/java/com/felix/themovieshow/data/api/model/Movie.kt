@@ -20,9 +20,3 @@ data class Movie(
     val backdropUrl: String?
         get() = backdropPath?.let { "https://image.tmdb.org/t/p/w780$it" }
 }
-
-data class MoviePagedResponse(
-    val page: Int,
-    val results: List<Movie>,
-    @Json(name = "total_pages") val totalPages: Int
-)

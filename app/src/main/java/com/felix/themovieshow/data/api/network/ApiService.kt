@@ -1,8 +1,6 @@
 package com.felix.themovieshow.data.api.network
 
-import com.felix.themovieshow.data.api.model.GenreResponse
 import com.felix.themovieshow.data.api.model.Movie
-import com.felix.themovieshow.data.api.model.MoviePagedResponse
 import com.felix.themovieshow.data.api.model.PopularMovieResponse
 import com.felix.themovieshow.data.api.model.ReviewPagedResponse
 import com.felix.themovieshow.data.api.model.TopRatedMovieResponse
@@ -12,21 +10,6 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface ApiService {
-
-    // User story 1: list of official genres
-    @GET("genre/movie/list")
-    suspend fun getGenres(
-        @Query("language") language: String = "en-US"
-    ): GenreResponse
-
-    // User story 2: discover movies by genre (dengan pagination -> endless scrolling)
-    @GET("discover/movie")
-    suspend fun discoverMoviesByGenre(
-        @Query("with_genres") genreId: Int,
-        @Query("page") page: Int,
-        @Query("language") language: String = "en-US"
-    ): MoviePagedResponse
-
     // User story 3: primary info saat movie diklik
     @GET("movie/{movie_id}")
     suspend fun getMovieDetail(

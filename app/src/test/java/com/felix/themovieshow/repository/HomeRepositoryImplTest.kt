@@ -1,9 +1,8 @@
 package com.felix.themovieshow.repository
 
-import com.felix.themovieshow.data.api.model.Genre
-import com.felix.themovieshow.data.api.model.GenreResponse
 import com.felix.themovieshow.data.api.model.Movie
-import com.felix.themovieshow.data.api.model.MoviePagedResponse
+import com.felix.themovieshow.data.api.model.PopularMovieResponse
+import com.felix.themovieshow.data.api.model.TopRatedMovieResponse
 import com.felix.themovieshow.data.api.network.ApiService
 import com.felix.themovieshow.data.repository.HomeRepositoryImpl
 import com.felix.themovieshow.data.resource.Resource
@@ -20,6 +19,17 @@ class HomeRepositoryImplTest {
     private lateinit var api: ApiService
     private lateinit var repository: HomeRepositoryImpl
 
+    private val sampleMovie = Movie(
+        id = 1,
+        title = "Test Movie",
+        posterPath = "/path.jpg",
+        backdropPath = "/backdrop.jpg",
+        overview = "Overview",
+        releaseDate = "2024-01-01",
+        voteAverage = 8.5,
+        genreIds = listOf(1, 2)
+    )
+
     @Before
     fun setUp() {
         api = mockk()
@@ -27,68 +37,56 @@ class HomeRepositoryImplTest {
     }
 
     @Test
-    fun `getGenres returns Success when api call succeeds`() = runTest {
-        val fakeGenres = listOf(Genre(id = 1, name = "Action"), Genre(id = 2, name = "Drama"))
-        coEvery { api.getGenres() } returns GenreResponse(genres = fakeGenres)
-
-        // Act
-        val result = repository.getGenres()
-
-        // Assert
-        assertTrue(result is Resource.Success)
-        assertEquals(fakeGenres, (result as Resource.Success).data)
-    }
-
-    @Test
-    fun `getGenres returns Error when api call throws exception`() = runTest {
-        coEvery { api.getGenres() } throws IOException("No internet connection")
-
-        // Act
-        val result = repository.getGenres()
-
-        // Assert
-        assertTrue(result is Resource.Error)
-        assertEquals("No internet connection", (result as Resource.Error).message)
-    }
-
-    @Test
-    fun `getGenres returns fallback message when exception has no message`() = runTest {
-        coEvery { api.getGenres() } throws RuntimeException()
-
-        val result = repository.getGenres()
-
-        assertTrue(result is Resource.Error)
-        assertEquals("Gagal mengambil daftar genre", (result as Resource.Error).message)
-    }
-
-    @Test
-    fun `discoverMoviesByGenre returns Success when api call succeeds`() = runTest {
-        val fakeMovie = Movie(
-            id = 1,
-            title = "Sample Movie",
-            posterPath = "/poster.jpg",
-            backdropPath = null,
-            overview = "Sample overview",
-            releaseDate = "2026-01-01",
-            voteAverage = 7.5,
-            genreIds = listOf(1)
+    fun `getPopularMovie returns Success when api call succeeds`() = runTest {
+        val expectedResponse = PopularMovieResponse(
+            page = 1,
+            results = listOf(sampleMovie),
+            totalPages = 10,
+            totalResults = 100
         )
-        val fakeResponse = MoviePagedResponse(page = 1, results = listOf(fakeMovie), totalPages = 5)
-        coEvery { api.discoverMoviesByGenre(genreId = 1, page = 1) } returns fakeResponse
+        coEvery { api.getMoviePopular(1) } returns expectedResponse
 
-        val result = repository.discoverMoviesByGenre(genreId = 1, page = 1)
+        val result = repository.getPopularMovie(1)
 
         assertTrue(result is Resource.Success)
-        assertEquals(fakeResponse, (result as Resource.Success).data)
+        assertEquals(expectedResponse, (result as Resource.Success).data)
     }
 
     @Test
-    fun `discoverMoviesByGenre returns Error when api call throws exception`() = runTest {
-        coEvery { api.discoverMoviesByGenre(genreId = 1, page = 1) } throws IOException("Timeout")
+    fun `getPopularMovie returns Error when api call throws exception`() = runTest {
+        val errorMessage = "Network Error"
+        coEvery { api.getMoviePopular(1) } throws IOException(errorMessage)
 
-        val result = repository.discoverMoviesByGenre(genreId = 1, page = 1)
+        val result = repository.getPopularMovie(1)
 
         assertTrue(result is Resource.Error)
-        assertEquals("Timeout", (result as Resource.Error).message)
+        assertEquals(errorMessage, (result as Resource.Error).message)
+    }
+
+    @Test
+    fun `getTopRated returns Success when api call succeeds`() = runTest {
+        val expectedResponse = TopRatedMovieResponse(
+            page = 1,
+            results = listOf(sampleMovie),
+            totalPages = 5,
+            totalResults = 50
+        )
+        coEvery { api.getTopRated(1) } returns expectedResponse
+
+        val result = repository.getTopRated(1)
+
+        assertTrue(result is Resource.Success)
+        assertEquals(expectedResponse, (result as Resource.Success).data)
+    }
+
+    @Test
+    fun `getTopRated returns Error when api call throws exception`() = runTest {
+        val errorMessage = "Server Error"
+        coEvery { api.getTopRated(1) } throws Exception(errorMessage)
+
+        val result = repository.getTopRated(1)
+
+        assertTrue(result is Resource.Error)
+        assertEquals(errorMessage, (result as Resource.Error).message)
     }
 }
