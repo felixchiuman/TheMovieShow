@@ -8,6 +8,7 @@ import com.felix.themovieshow.data.repository.ReviewRepository
 import com.felix.themovieshow.data.repository.ReviewRepositoryImpl
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
@@ -30,4 +31,16 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindReviewRepository(impl: ReviewRepositoryImpl): ReviewRepository
+
+    /*@Provides
+    @Singleton
+    fun bindHomeRepository(impl: HomeRepositoryImpl): HomeRepository = impl
+
+    @Provides
+    @Singleton
+    fun bindMovieDetailRepository(impl: MovieDetailRepositoryImpl): MovieDetailRepository = impl
+
+    @Provides
+    @Singleton
+    fun bindReviewRepository(impl: ReviewRepositoryImpl): ReviewRepository = impl*/
 }

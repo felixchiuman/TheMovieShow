@@ -1,16 +1,19 @@
 package com.felix.themovieshow.viewmodel
 
+import androidx.paging.PagingData
+import androidx.paging.testing.asSnapshot
 import com.felix.themovieshow.data.api.model.Genre
 import com.felix.themovieshow.data.api.model.Movie
-import com.felix.themovieshow.data.api.model.MoviePagedResponse
 import com.felix.themovieshow.data.repository.HomeRepository
 import com.felix.themovieshow.data.resource.Resource
 import com.felix.themovieshow.ui.home.HomeViewModel
 import io.mockk.coEvery
-import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -23,6 +26,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+/**
+ * Race condition loadMoreMovies (double fetch saat spam load more) sekarang
+ * ditangani Paging 3 by design -- regression test lamanya tersimpan di git
+ * history. Page tracking & error handling ditest di MoviePagingSourceTest.
+ * Test di sini fokus ke: state genre, switching genre (flatMapLatest), dan
+ * dedup filter.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
 
@@ -55,11 +65,11 @@ class HomeViewModelTest {
     // ============ Positive case: init() ============
 
     @Test
-    fun `init loads genres and movies of first genre on success`() = runTest(testDispatcher) {
+    fun `init loads genres and selects first genre on success`() = runTest(testDispatcher) {
         val genres = listOf(Genre(1, "Action"), Genre(2, "Drama"))
         coEvery { repository.getGenres() } returns Resource.Success(genres)
-        coEvery { repository.discoverMoviesByGenre(1, 1) } returns Resource.Success(
-            MoviePagedResponse(page = 1, results = listOf(sampleMovie(1)), totalPages = 5)
+        every { repository.getMoviesByGenrePaged(1) } returns flowOf(
+            PagingData.from(listOf(sampleMovie(1)))
         )
 
         val viewModel = HomeViewModel(repository)
@@ -68,9 +78,10 @@ class HomeViewModelTest {
         val state = viewModel.uiState.value
         assertEquals(genres, state.genres)
         assertEquals(1, state.selectedGenreId)
-        assertEquals(1, state.movies.size)
         assertFalse(state.isLoadingGenres)
-        assertFalse(state.isLoadingMovies)
+
+        val snapshot = viewModel.movies.asSnapshot()
+        assertEquals(listOf(1), snapshot.map { it.id })
     }
 
     // ============ Negative case: init() ============
@@ -91,105 +102,62 @@ class HomeViewModelTest {
     // ============ onGenreSelected ============
 
     @Test
+    fun `onGenreSelected switches movies to the new genre`() = runTest(testDispatcher) {
+        val genres = listOf(Genre(1, "Action"), Genre(2, "Drama"))
+        coEvery { repository.getGenres() } returns Resource.Success(genres)
+        every { repository.getMoviesByGenrePaged(1) } returns flowOf(
+            PagingData.from(listOf(sampleMovie(1)))
+        )
+        every { repository.getMoviesByGenrePaged(2) } returns flowOf(
+            PagingData.from(listOf(sampleMovie(2)))
+        )
+
+        val viewModel = HomeViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.onGenreSelected(Genre(2, "Drama"))
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.selectedGenreId)
+        // flatMapLatest cancel Pager genre lama, ganti dengan genre baru
+        val snapshot = viewModel.movies.asSnapshot()
+        assertEquals(listOf(2), snapshot.map { it.id })
+    }
+
+    @Test
     fun `onGenreSelected does nothing when the same genre is already selected`() = runTest(testDispatcher) {
         val genres = listOf(Genre(1, "Action"))
         coEvery { repository.getGenres() } returns Resource.Success(genres)
-        coEvery { repository.discoverMoviesByGenre(1, 1) } returns Resource.Success(
-            MoviePagedResponse(1, listOf(sampleMovie(1)), 5)
+        every { repository.getMoviesByGenrePaged(1) } returns flowOf(
+            PagingData.from(listOf(sampleMovie(1)))
         )
 
         val viewModel = HomeViewModel(repository)
         advanceUntilIdle()
 
-        viewModel.onGenreSelected(Genre(1, "Action")) // genre yang sama seperti yang sudah dipilih
+        viewModel.onGenreSelected(Genre(1, "Action")) // genre yang sama
         advanceUntilIdle()
 
-        // discoverMoviesByGenre(1, 1) cuma boleh kepanggil SEKALI (dari init), tidak nge-refetch
-        coVerify(exactly = 1) { repository.discoverMoviesByGenre(1, 1) }
+        viewModel.movies.asSnapshot()
+
+        // Pager tidak boleh dibuat ulang untuk genre yang sama
+        verify(exactly = 1) { repository.getMoviesByGenrePaged(1) }
     }
 
-    // ============ REGRESSION TEST ============
+    // ============ Dedup safety net (pengganti distinctBy lama) ============
 
     @Test
-    fun `calling loadMoreMovies three times rapidly only triggers ONE fetch for the next page`() =
-        runTest(testDispatcher) {
-            val genres = listOf(Genre(1, "Action"))
-            coEvery { repository.getGenres() } returns Resource.Success(genres)
-            coEvery { repository.discoverMoviesByGenre(1, 1) } returns Resource.Success(
-                MoviePagedResponse(1, listOf(sampleMovie(1)), totalPages = 5)
-            )
-            coEvery { repository.discoverMoviesByGenre(1, 2) } returns Resource.Success(
-                MoviePagedResponse(2, listOf(sampleMovie(2)), totalPages = 5)
-            )
-
-            val viewModel = HomeViewModel(repository)
-            advanceUntilIdle()
-
-            viewModel.loadMoreMovies()
-            viewModel.loadMoreMovies()
-            viewModel.loadMoreMovies()
-            advanceUntilIdle()
-
-            coVerify(exactly = 1) { repository.discoverMoviesByGenre(1, 2) }
-        }
-
-    @Test
-    fun `loadMoreMovies does nothing when a fetch is already in progress`() = runTest(testDispatcher) {
+    fun `duplicate movies from api are filtered out`() = runTest(testDispatcher) {
         val genres = listOf(Genre(1, "Action"))
         coEvery { repository.getGenres() } returns Resource.Success(genres)
-        coEvery { repository.discoverMoviesByGenre(1, 1) } returns Resource.Success(
-            MoviePagedResponse(1, listOf(sampleMovie(1)), totalPages = 5)
-        )
-        coEvery { repository.discoverMoviesByGenre(1, 2) } returns Resource.Success(
-            MoviePagedResponse(2, listOf(sampleMovie(2)), totalPages = 5)
+        every { repository.getMoviesByGenrePaged(1) } returns flowOf(
+            PagingData.from(listOf(sampleMovie(1), sampleMovie(1), sampleMovie(2)))
         )
 
         val viewModel = HomeViewModel(repository)
         advanceUntilIdle()
 
-        viewModel.loadMoreMovies()
-        assertTrue(viewModel.uiState.value.isLoadingMovies)
-
-        viewModel.loadMoreMovies()
-        advanceUntilIdle()
-
-        coVerify(exactly = 1) { repository.discoverMoviesByGenre(1, 2) }
-    }
-
-    @Test
-    fun `loadMoreMovies does nothing when no genre is selected`() = runTest(testDispatcher) {
-        coEvery { repository.getGenres() } returns Resource.Success(emptyList())
-
-        val viewModel = HomeViewModel(repository)
-        advanceUntilIdle()
-
-        viewModel.loadMoreMovies()
-        advanceUntilIdle()
-
-        coVerify(exactly = 0) { repository.discoverMoviesByGenre(any(), any()) }
-    }
-
-    // ============ distinctBy safety net ============
-
-    @Test
-    fun `merging paginated results removes duplicate movie ids`() = runTest(testDispatcher) {
-        val genres = listOf(Genre(1, "Action"))
-        coEvery { repository.getGenres() } returns Resource.Success(genres)
-        coEvery { repository.discoverMoviesByGenre(1, 1) } returns Resource.Success(
-            MoviePagedResponse(1, listOf(sampleMovie(1)), totalPages = 5)
-        )
-
-        coEvery { repository.discoverMoviesByGenre(1, 2) } returns Resource.Success(
-            MoviePagedResponse(2, listOf(sampleMovie(1), sampleMovie(2)), totalPages = 5)
-        )
-
-        val viewModel = HomeViewModel(repository)
-        advanceUntilIdle()
-
-        viewModel.loadMoreMovies()
-        advanceUntilIdle()
-
-        val movieIds = viewModel.uiState.value.movies.map { it.id }
+        val movieIds = viewModel.movies.asSnapshot().map { it.id }
         assertEquals(listOf(1, 2), movieIds)
         assertEquals(movieIds.size, movieIds.distinct().size)
     }
