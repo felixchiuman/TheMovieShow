@@ -6,7 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
-    alias(libs.plugins.kapt)
+    //alias(libs.plugins.kapt)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -74,7 +75,8 @@ dependencies {
 
     // Hilt (Dependency Injection)
     implementation(libs.hilt.android)
-    kapt(libs.hilt.compiler)
+    //kapt(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
     // Retrofit + Moshi (Networking)
