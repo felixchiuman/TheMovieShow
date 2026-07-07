@@ -37,6 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import com.felix.themovieshow.data.api.model.Genre
 import com.felix.themovieshow.data.api.model.Movie
@@ -177,6 +180,55 @@ fun MovieRowSection(
                 // trigger load more saat 3 item terakhir kelihatan -> endless scrolling
                 if (index >= movies.size - 3) {
                     LaunchedEffect(movie.id) { onLoadMore() }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Varian Paging 3 dari [MovieRowSection] untuk HomeScreen.
+ * Endless scrolling otomatis via prefetchDistance -- tidak perlu
+ * LaunchedEffect + onLoadMore manual lagi.
+ *
+ * [maxItems] membatasi jumlah item yang dirender (dipakai row "Top Trending"
+ * yang cuma nampilin 10 item pertama dari stream yang sama). Row yang dibatasi
+ * tidak akan pernah trigger load page berikutnya.
+ */
+@Composable
+fun MovieRowSectionPaged(
+    title: String,
+    movies: LazyPagingItems<Movie>,
+    onMovieClick: (Movie) -> Unit,
+    onViewAllClick: () -> Unit = {},
+    maxItems: Int = Int.MAX_VALUE,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.padding(top = 20.dp)) {
+        SectionHeader(title = title, onViewAllClick = onViewAllClick)
+        Spacer(Modifier.height(10.dp))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 20.dp)
+        ) {
+            val visibleCount = minOf(movies.itemCount, maxItems)
+            items(
+                count = visibleCount,
+                key = movies.itemKey { it.id }
+            ) { index ->
+                movies[index]?.let { movie ->
+                    MoviePosterCard(movie = movie, onClick = onMovieClick)
+                }
+            }
+            // Spinner kecil di ujung row saat page berikutnya sedang dimuat
+            if (maxItems == Int.MAX_VALUE && movies.loadState.append is LoadState.Loading) {
+                item {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = AccentRed)
+                    }
                 }
             }
         }

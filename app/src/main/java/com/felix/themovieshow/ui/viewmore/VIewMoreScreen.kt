@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,14 +18,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.paging.LoadState
+import androidx.paging.LoadStates
+import androidx.paging.PagingData
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import com.felix.themovieshow.data.api.model.Movie
 import com.felix.themovieshow.ui.component.EmptyView
 import com.felix.themovieshow.ui.component.ErrorView
@@ -34,8 +37,8 @@ import com.felix.themovieshow.ui.component.LoadingView
 import com.felix.themovieshow.ui.component.MoviePosterCard
 import com.felix.themovieshow.ui.theme.BackgroundDark
 import com.felix.themovieshow.ui.theme.TheMovieShowTheme
+import kotlinx.coroutines.flow.MutableStateFlow
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViewMoreScreen(
     genreName: String,
@@ -43,15 +46,15 @@ fun ViewMoreScreen(
     onMovieClick: (Movie) -> Unit,
     viewModel: ViewMoreViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    // Endless scroll otomatis: akses item via movies[index] + prefetchDistance
+    // di PagingConfig menggantikan LaunchedEffect { onLoadMore() } manual.
+    val movies = viewModel.movies.collectAsLazyPagingItems()
 
     ViewMoreContent(
         genreName = genreName,
-        uiState = uiState,
+        movies = movies,
         onBackClick = onBackClick,
-        onMovieClick = onMovieClick,
-        onLoadMore = viewModel::loadMore,
-        onRetry = viewModel::retry
+        onMovieClick = onMovieClick
     )
 }
 
@@ -60,11 +63,9 @@ fun ViewMoreScreen(
 @Composable
 fun ViewMoreContent(
     genreName: String,
-    uiState: ViewMoreUiState,
+    movies: LazyPagingItems<Movie>,
     onBackClick: () -> Unit,
-    onMovieClick: (Movie) -> Unit,
-    onLoadMore: () -> Unit,
-    onRetry: () -> Unit
+    onMovieClick: (Movie) -> Unit
 ) {
     Scaffold(
         containerColor = BackgroundDark,
@@ -80,18 +81,20 @@ fun ViewMoreContent(
             )
         }
     ) { padding ->
+        val refreshState = movies.loadState.refresh
         when {
-            uiState.movies.isEmpty() && uiState.isLoading -> {
+            refreshState is LoadState.Loading && movies.itemCount == 0 -> {
                 LoadingView(modifier = Modifier.padding(padding))
             }
-            uiState.errorMessage != null && uiState.movies.isEmpty() -> {
+            refreshState is LoadState.Error && movies.itemCount == 0 -> {
                 ErrorView(
-                    message = uiState.errorMessage,
-                    onRetry = onRetry,
+                    message = refreshState.error.message
+                        ?: "Gagal mengambil daftar film untuk genre ini",
+                    onRetry = movies::retry,
                     modifier = Modifier.padding(padding)
                 )
             }
-            uiState.movies.isEmpty() -> {
+            movies.itemCount == 0 -> {
                 EmptyView("Tidak ada film untuk genre ini", modifier = Modifier.padding(padding))
             }
             else -> {
@@ -105,21 +108,34 @@ fun ViewMoreContent(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    itemsIndexed(uiState.movies, key = { _, movie -> movie.id }) { index, movie ->
-                        MoviePosterCard(
-                            movie = movie,
-                            onClick = onMovieClick,
-                            width = 110,
-                            height = 160
-                        )
-                        if (index >= uiState.movies.size - 6) {
-                            LaunchedEffect(movie.id) { onLoadMore() }
+                    items(
+                        count = movies.itemCount,
+                        key = movies.itemKey { it.id }
+                    ) { index ->
+                        movies[index]?.let { movie ->
+                            MoviePosterCard(
+                                movie = movie,
+                                onClick = onMovieClick,
+                                width = 110,
+                                height = 160
+                            )
                         }
                     }
-                    if (uiState.isLoading) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            LoadingView()
+
+                    when (val appendState = movies.loadState.append) {
+                        is LoadState.Loading -> {
+                            item(span = { GridItemSpan(maxLineSpan) }) { LoadingView() }
                         }
+                        is LoadState.Error -> {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                ErrorView(
+                                    message = appendState.error.message
+                                        ?: "Gagal memuat halaman berikutnya",
+                                    onRetry = movies::retry
+                                )
+                            }
+                        }
+                        else -> Unit
                     }
                 }
             }
@@ -131,26 +147,36 @@ fun ViewMoreContent(
 @Composable
 private fun ViewMoreContentPreview() {
     TheMovieShowTheme {
+        val sampleMovies = List(9) { i ->
+            Movie(
+                id = i,
+                title = "Movie $i",
+                posterPath = null,
+                backdropPath = null,
+                overview = "",
+                releaseDate = "2026-01-01",
+                voteAverage = 7.5,
+                genreIds = listOf(1)
+            )
+        }
+        // PagingData statis untuk preview, loadState di-set NotLoading supaya grid tampil
+        val previewFlow = remember {
+            MutableStateFlow(
+                PagingData.from(
+                    data = sampleMovies,
+                    sourceLoadStates = LoadStates(
+                        refresh = LoadState.NotLoading(endOfPaginationReached = true),
+                        prepend = LoadState.NotLoading(endOfPaginationReached = true),
+                        append = LoadState.NotLoading(endOfPaginationReached = true)
+                    )
+                )
+            )
+        }
         ViewMoreContent(
             genreName = "Action",
-            uiState = ViewMoreUiState(
-                movies = List(9) { i ->
-                    Movie(
-                        id = i,
-                        title = "Movie $i",
-                        posterPath = null,
-                        backdropPath = null,
-                        overview = "",
-                        releaseDate = "2026-01-01",
-                        voteAverage = 7.5,
-                        genreIds = listOf(1)
-                    )
-                }
-            ),
+            movies = previewFlow.collectAsLazyPagingItems(),
             onBackClick = {},
-            onMovieClick = {},
-            onLoadMore = {},
-            onRetry = {}
+            onMovieClick = {}
         )
     }
 }

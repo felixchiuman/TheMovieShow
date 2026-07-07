@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -17,14 +16,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.paging.LoadState
+import androidx.paging.LoadStates
+import androidx.paging.PagingData
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import com.felix.themovieshow.data.api.model.AuthorDetails
 import com.felix.themovieshow.data.api.model.Review
 import com.felix.themovieshow.ui.component.EmptyView
@@ -33,30 +36,26 @@ import com.felix.themovieshow.ui.component.LoadingView
 import com.felix.themovieshow.ui.component.ReviewCard
 import com.felix.themovieshow.ui.theme.BackgroundDark
 import com.felix.themovieshow.ui.theme.TheMovieShowTheme
+import kotlinx.coroutines.flow.MutableStateFlow
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewListScreen(
     onBackClick: () -> Unit,
     viewModel: ReviewListViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val reviews = viewModel.reviews.collectAsLazyPagingItems()
 
     ReviewListContent(
-        uiState = uiState,
-        onBackClick = onBackClick,
-        onRetry = viewModel::retry,
-        onLoadMore = viewModel::loadMore
+        reviews = reviews,
+        onBackClick = onBackClick
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewListContent(
-    uiState: ReviewListUiState,
-    onBackClick: () -> Unit,
-    onRetry: () -> Unit,
-    onLoadMore: () -> Unit
+    reviews: LazyPagingItems<Review>,
+    onBackClick: () -> Unit
 ) {
     Scaffold(
         containerColor = BackgroundDark,
@@ -72,18 +71,19 @@ fun ReviewListContent(
             )
         }
     ) { padding ->
+        val refreshState = reviews.loadState.refresh
         when {
-            uiState.reviews.isEmpty() && uiState.isLoading -> {
+            refreshState is LoadState.Loading && reviews.itemCount == 0 -> {
                 LoadingView(modifier = Modifier.padding(padding))
             }
-            uiState.errorMessage != null && uiState.reviews.isEmpty() -> {
+            refreshState is LoadState.Error && reviews.itemCount == 0 -> {
                 ErrorView(
-                    message = uiState.errorMessage,
-                    onRetry = onRetry,
+                    message = refreshState.error.message ?: "Gagal mengambil review film",
+                    onRetry = reviews::retry,
                     modifier = Modifier.padding(padding)
                 )
             }
-            uiState.reviews.isEmpty() -> {
+            reviews.itemCount == 0 -> {
                 EmptyView("Belum ada review untuk film ini", modifier = Modifier.padding(padding))
             }
             else -> {
@@ -95,14 +95,29 @@ fun ReviewListContent(
                     contentPadding = PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    itemsIndexed(uiState.reviews, key = { _, review -> review.id }) { index, review ->
-                        ReviewCard(review = review)
-                        if (index >= uiState.reviews.size - 3) {
-                            LaunchedEffect(review.id) { onLoadMore() }
+                    items(
+                        count = reviews.itemCount,
+                        key = reviews.itemKey { it.id }
+                    ) { index ->
+                        reviews[index]?.let { review ->
+                            ReviewCard(review = review)
                         }
                     }
-                    if (uiState.isLoading) {
-                        item { LoadingView() }
+
+                    when (val appendState = reviews.loadState.append) {
+                        is LoadState.Loading -> {
+                            item { LoadingView() }
+                        }
+                        is LoadState.Error -> {
+                            item {
+                                ErrorView(
+                                    message = appendState.error.message
+                                        ?: "Gagal memuat review berikutnya",
+                                    onRetry = reviews::retry
+                                )
+                            }
+                        }
+                        else -> Unit
                     }
                 }
             }
@@ -131,28 +146,31 @@ private val sampleReviewList = listOf(
     )
 )
 
+/** PagingData statis untuk preview tanpa Hilt/ViewModel. */
+@Composable
+private fun previewPagingItems(data: List<Review>): LazyPagingItems<Review> {
+    val flow = remember {
+        MutableStateFlow(
+            PagingData.from(
+                data = data,
+                sourceLoadStates = LoadStates(
+                    refresh = LoadState.NotLoading(endOfPaginationReached = true),
+                    prepend = LoadState.NotLoading(endOfPaginationReached = true),
+                    append = LoadState.NotLoading(endOfPaginationReached = true)
+                )
+            )
+        )
+    }
+    return flow.collectAsLazyPagingItems()
+}
+
 @Preview(showBackground = true, name = "Review - Loaded")
 @Composable
 private fun ReviewListContentPreview() {
     TheMovieShowTheme {
         ReviewListContent(
-            uiState = ReviewListUiState(reviews = sampleReviewList),
-            onBackClick = {},
-            onRetry = {},
-            onLoadMore = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Review - Loading")
-@Composable
-private fun ReviewListContentLoadingPreview() {
-    TheMovieShowTheme {
-        ReviewListContent(
-            uiState = ReviewListUiState(isLoading = true),
-            onBackClick = {},
-            onRetry = {},
-            onLoadMore = {}
+            reviews = previewPagingItems(sampleReviewList),
+            onBackClick = {}
         )
     }
 }
@@ -162,23 +180,8 @@ private fun ReviewListContentLoadingPreview() {
 private fun ReviewListContentEmptyPreview() {
     TheMovieShowTheme {
         ReviewListContent(
-            uiState = ReviewListUiState(reviews = emptyList()),
-            onBackClick = {},
-            onRetry = {},
-            onLoadMore = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Review - Error")
-@Composable
-private fun ReviewListContentErrorPreview() {
-    TheMovieShowTheme {
-        ReviewListContent(
-            uiState = ReviewListUiState(errorMessage = "Gagal mengambil review"),
-            onBackClick = {},
-            onRetry = {},
-            onLoadMore = {}
+            reviews = previewPagingItems(emptyList()),
+            onBackClick = {}
         )
     }
 }
